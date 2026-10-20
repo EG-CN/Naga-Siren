@@ -15,9 +15,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.9.7</string>
+	<string>0.9.14</string>
 	<key>CFBundleVersion</key>
-	<string>97</string>
+	<string>104</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
@@ -30,5 +30,7 @@
 	<string>仅在你手动测试电脑麦克风时采集声音；电脑语音输入由豆包直接处理，小娜迦待机不采集。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>将你点击录制的遥控器声音在本机转成中文文字。</string>
+	<key>LSUIElement</key>
+	<true/>
 </dict>
 </plist>

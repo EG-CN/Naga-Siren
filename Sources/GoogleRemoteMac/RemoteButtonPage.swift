@@ -105,9 +105,18 @@ struct RemoteButtonPage:View {
                     Image(systemName:"keyboard").foregroundStyle(.secondary)
                     ShortcutRecorder(shortcut:Binding(get:{binding.wrappedValue.shortcut},set:{var a=binding.wrappedValue;a.shortcut=$0;binding.wrappedValue=a}),allowModifierOnly:false)
                         .frame(height:27).id(selected+gesture+store.selected.uuidString)
-                    Menu {ForEach([VoiceShortcut(keyCode:36,modifiers:0,label:"回车"),VoiceShortcut(keyCode:49,modifiers:0,label:"空格"),VoiceShortcut(keyCode:53,modifiers:0,label:"Esc")],id:\.keyCode){key in
+                    Menu {ForEach([
+                        VoiceShortcut(keyCode:36,modifiers:0,label:"回车"),
+                        VoiceShortcut(keyCode:49,modifiers:0,label:"空格"),
+                        VoiceShortcut(keyCode:53,modifiers:0,label:"Esc"),
+                        VoiceShortcut(keyCode:12,modifiers:UInt64(NSEvent.ModifierFlags([.control,.command]).rawValue),label:"锁定屏幕 ⌃⌘Q"),
+                        VoiceShortcut(keyCode:8,modifiers:UInt64(NSEvent.ModifierFlags.command.rawValue),label:"复制 ⌘C"),
+                        VoiceShortcut(keyCode:9,modifiers:UInt64(NSEvent.ModifierFlags.command.rawValue),label:"粘贴 ⌘V"),
+                        VoiceShortcut(keyCode:48,modifiers:UInt64(NSEvent.ModifierFlags.command.rawValue),label:"切换应用 ⌘Tab"),
+                        VoiceShortcut(keyCode:49,modifiers:UInt64(NSEvent.ModifierFlags.command.rawValue),label:"聚焦搜索 ⌘空格")
+                    ],id:\.label){key in
                         Button(key.label){var a=binding.wrappedValue;a.shortcut=key;binding.wrappedValue=a}
-                    }}label:{Image(systemName:"ellipsis")}.menuStyle(.borderlessButton).frame(width:28).help("常用按键")
+                    }}label:{Image(systemName:"ellipsis")}.menuStyle(.borderlessButton).frame(width:28).help("常用快捷键预设，无需按键录入")
                 }.padding(10).clipShape(RoundedRectangle(cornerRadius:10))
             }
         }.padding(18)

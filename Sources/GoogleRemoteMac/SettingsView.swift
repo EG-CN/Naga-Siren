@@ -85,7 +85,7 @@ struct NagaSettingsView:View{
                 ForEach(probe.devices,id:\.identifier){device in HStack{Label(device.name ?? "Chromecast Remote",systemImage:"appletvremote.gen4");Spacer();Button(probe.connected ? "已连接":"连接"){probe.connect(device)}.disabled(probe.connected)}}
             }
             GlassCard(title:"外观与反馈"){
-                Toggle("在菜单栏显示小娜迦",isOn:$prefs.showMenu)
+                Label("仅在菜单栏运行；关闭窗口后继续工作",systemImage:"menubar.rectangle")
                 Toggle("显示录音浮条",isOn:$prefs.showHUD)
                 Toggle("开始与结束提示音",isOn:$prefs.sounds)
                 HStack{Text("提示音量");Slider(value:$prefs.volume,in:0...1);Button("试听开始"){Feedback.shared.sound(start:true,preview:true)};Button("试听结束"){Feedback.shared.sound(start:false,preview:true)}}
@@ -188,7 +188,7 @@ struct NagaMenu:View{
             Text(capture.computer.active ? "正在采集电脑声音" : (capture.armed ? "正在采集遥控器声音":"当前未采集声音")).font(.caption).foregroundStyle(.secondary)
             HStack{Button(capture.routeControl.wantsEnabled ? "暂停语音":"恢复语音"){capture.enableAutomatic(!capture.routeControl.wantsEnabled)}.disabled(capture.routeChanging);Button("停止",role:.destructive){capture.emergencyStop()}}
             Divider()
-            HStack{Button("设置…"){openWindow(id:"main");NSApplication.shared.activate(ignoringOtherApps:true)};Spacer();Button("退出"){NSApplication.shared.terminate(nil)}}.font(.callout)
+            HStack{Button("打开设置…"){openWindow(id:"main");SettingsWindowPresenter.requestOpen()};Spacer();Button("退出小娜迦"){NSApplication.shared.terminate(nil)}}.font(.callout)
         }.padding(20).frame(width:320).background(.regularMaterial)
     }
 }

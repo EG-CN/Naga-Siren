@@ -11,6 +11,9 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
     private var settings: NSRunningApplication?
     private var previousApplication: NSRunningApplication?
     private var launchedSettings = false
+    private var ownsSettingsUI = false
+    private var preparedBackground = false
+    private var preserveSettingsUI = false
     private var transitionDeadline:ContinuousClock.Instant?
     private func checkDeadline() throws {if let transitionDeadline,ContinuousClock.now>=transitionDeadline {throw Failure(message:"豆包设置切换超时，已停止接管")}}
     init(capture:AudioCapture) { self.capture=capture }
@@ -21,7 +24,7 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
     func stopNewSessions(){
         capture?.stopVoiceInputs()
         transitionDeadline=nil
-        previousApplication=NSWorkspace.shared.frontmostApplication
+        if previousApplication == nil { previousApplication=NSWorkspace.shared.frontmostApplication }
     }
     func endOwnedSession() async throws {
         try await capture?.endOwnedForRoute()
@@ -36,6 +39,7 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
     // Remote transactions are serialized by AudioCapture with lifecycle changes.
     // Capture focus afresh for each switch and always close our settings UI.
     func selectVerified(_ route:VoiceInputRoute) async throws {
+        SettingsWindowPresenter.hideForVoice()
         DiagnosticLog.record("route.request",fields:["target":route == .virtual ? "virtual":"builtin"])
         transitionDeadline=ContinuousClock.now.advanced(by:.seconds(10))
         previousApplication=NSWorkspace.shared.frontmostApplication
@@ -57,6 +61,13 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
     private func appElement() async throws -> AXUIElement {
         try checkDeadline()
         guard AXIsProcessTrusted() else { throw Failure(message:"自动切换豆包麦克风需要小娜迦的辅助功能权限") }
+        if !ownsSettingsUI {
+            ownsSettingsUI = true
+            let front = NSWorkspace.shared.frontmostApplication
+            preserveSettingsUI = false
+            if previousApplication == nil { previousApplication = front }
+            DiagnosticLog.record("settings.transaction.begin", fields:["preserveUserWindow":String(preserveSettingsUI)])
+        }
         if settings == nil || settings?.isTerminated == true {
             settings=NSRunningApplication.runningApplications(withBundleIdentifier:settingsID).first
             if settings == nil {
@@ -134,7 +145,13 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
                 try await Task.sleep(for:.milliseconds(80));list=try nodes(root)
             }
             let d=try devices()
-            if buttons(list).contains(where:{let s=text($0);return s==d.virtual || s==d.builtIn || s.hasPrefix("自动检测（")}) { return list }
+            if buttons(list).contains(where:{let s=text($0);return s==d.virtual || s==d.builtIn || s.hasPrefix("自动检测（")}) {
+                if !preparedBackground {
+                    preparedBackground=true
+                    minimizeSettingsWindows()
+                }
+                return list
+            }
             let voice=buttons(list).filter{text($0)=="语音输入"}
             if voice.count==1 {try press(voice[0])}
             try await Task.sleep(for:.milliseconds(120))
@@ -182,9 +199,29 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
         }
         throw Failure(message:"豆包麦克风列表未响应")
     }
+    private func minimizeSettingsWindows() {
+        guard let settings else {return}
+        let root=AXUIElementCreateApplication(settings.processIdentifier)
+        AXUIElementSetMessagingTimeout(root,0.6)
+        var minimized=0
+        if let windows=value(root,kAXWindowsAttribute) as? [AXUIElement] {
+            for window in windows {
+                if AXUIElementSetAttributeValue(window,kAXMinimizedAttribute as CFString,kCFBooleanTrue) == .success {minimized += 1}
+            }
+        }
+        DiagnosticLog.record("settings.background",fields:["minimizedWindows":String(minimized)])
+    }
     func finishUI(){
         transitionDeadline=nil
-        if launchedSettings {settings?.hide();launchedSettings=false}
+        if ownsSettingsUI && !preserveSettingsUI {
+            let hidden=settings?.hide() ?? false
+            if !hidden {minimizeSettingsWindows()}
+            DiagnosticLog.record("settings.transaction.finish",fields:["hidden":String(hidden),"launched":String(launchedSettings)])
+        }
+        preparedBackground=false
+        ownsSettingsUI=false
+        preserveSettingsUI=false
+        launchedSettings=false
         if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == settingsID,
            let previousApplication,!previousApplication.isTerminated {previousApplication.activate(options:[])}
         previousApplication=nil

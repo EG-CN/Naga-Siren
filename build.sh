@@ -10,5 +10,5 @@ cp Info.plist "$NAGA_APP/Contents/Info.plist"
 ditto --noextattr --norsrc Resources "$NAGA_APP/Contents/Resources"
 codesign --force --sign "$NAGA_SIGNING_IDENTITY" "$NAGA_APP"
 codesign --verify --deep --strict "$NAGA_APP"
-ditto -c -k --sequesterRsrc --keepParent "$NAGA_APP" dist/Naga-Siren-0.9.7.zip
-print "已生成 dist/Naga-Siren-0.9.7.zip"
+ditto -c -k --sequesterRsrc --keepParent "$NAGA_APP" dist/Naga-Siren-0.9.14.zip
+print "已生成 dist/Naga-Siren-0.9.14.zip"

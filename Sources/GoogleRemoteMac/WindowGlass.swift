@@ -26,6 +26,7 @@ struct WindowGlass:NSViewRepresentable {
         override func viewDidMoveToWindow(){super.viewDidMoveToWindow();configureWindow();report(reduceTransparency:reduceTransparency)}
         func configureWindow(){
             guard let window else{return}
+            SettingsWindowPresenter.register(window)
             window.isOpaque=false
             window.backgroundColor = .clear
             window.titlebarAppearsTransparent=true
@@ -43,5 +44,42 @@ struct TransparentWindowContent:ViewModifier {
         if #available(macOS 15.0,*) {
             content.containerBackground(.clear,for:.window)
         } else {content}
+    }
+}
+
+// Menu-bar apps can retain a hidden or minimized settings window. Restore the
+// actual settings window after SwiftUI has processed its openWindow action.
+@MainActor enum SettingsWindowPresenter {
+    private static var window: NSWindow?
+    static var createWindow: (() -> NSWindow?)?
+    private static var requested = false
+    private static var userOpened = false
+    static func register(_ settingsWindow:NSWindow) {
+        window=settingsWindow
+        if requested { present() }
+        else if !userOpened { DispatchQueue.main.async { if !userOpened { settingsWindow.orderOut(nil) } } }
+    }
+    static func requestOpen() {
+        requested=true
+        userOpened=true
+        DiagnosticLog.record("settings.window.request")
+        DispatchQueue.main.async { present() }
+    }
+    static func hideForVoice() {
+        requested=false
+        userOpened=false
+        window?.orderOut(nil)
+        DiagnosticLog.record("settings.window.background")
+    }
+    private static func present() {
+        guard requested else { return }
+        if window == nil { window=createWindow?() }
+        guard let window else { return }
+        requested=false
+        NSApp.unhide(nil)
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        NSApp.activate(ignoringOtherApps:true)
+        window.makeKeyAndOrderFront(nil)
+        DiagnosticLog.record("settings.window.presented",fields:["visible":String(window.isVisible),"miniaturized":String(window.isMiniaturized)])
     }
 }

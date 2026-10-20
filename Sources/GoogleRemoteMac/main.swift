@@ -24,6 +24,17 @@ final class RemoteProbe: NSObject, ObservableObject, @preconcurrency CBCentralMa
         super.init()
         DiagnosticLog.record("app.initialized")
         AppLifecycle.capture = capture
+        AppLifecycle.probe = self
+        SettingsWindowPresenter.createWindow = { [weak self] in
+            guard let self else { return nil }
+            let window = NSWindow(contentRect:NSRect(x:0,y:0,width:1180,height:800),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
+            window.title="小娜迦"
+            window.isReleasedWhenClosed=false
+            window.contentView=NSHostingView(rootView:NagaSettingsView(probe:self,capture:self.capture))
+            window.center()
+            return window
+        }
+        if AppLifecycle.hasFinishedLaunching { AppLifecycle.installMenu() }
         AppLifecycle.cleanup = { [weak self] in self?.buttons.stop();self?.stop() }
         capture.sendDeviceCommand = { [weak self] data in
             guard let self,let selected=self.selected,let tx=self.tx,self.voiceReady else{return}
@@ -241,8 +252,18 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
     static var hasFinishedLaunching=false
     func applicationDidFinishLaunching(_ notification:Notification){
         Self.hasFinishedLaunching=true
+        Self.installMenu()
+        NSApplication.shared.setActivationPolicy(.accessory)
+        NSApplication.shared.hide(nil)
         Logger(subsystem:"local.googleremote.macprobe",category:"app-startup").notice("应用启动完成，开始协调语音路由")
         Self.capture?.enableAutomatic(true)
+    }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    static weak var probe: RemoteProbe?
+    static var statusMenu: NativeStatusMenu?
+    static func installMenu() {
+        guard statusMenu == nil, let probe else { return }
+        statusMenu=NativeStatusMenu(probe:probe)
     }
     static weak var capture: AudioCapture?
     static var cleanup: (() -> Void)?
@@ -276,13 +297,9 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
 struct GoogleRemoteMacApp: App {
     @NSApplicationDelegateAdaptor(AppLifecycle.self) private var lifecycle
     @StateObject private var probe = RemoteProbe()
-    @ObservedObject private var preferences = Preferences.shared
     var body: some Scene {
         WindowGroup("小娜迦", id: "main") { NagaSettingsView(probe: probe,capture:probe.capture) }
-        MenuBarExtra("小娜迦", systemImage: "water.waves",isInserted:Binding(get:{preferences.showMenu},set:{ value in
-                guard preferences.showMenu != value else{return}
-                Task { @MainActor in if preferences.showMenu != value { preferences.showMenu=value } }
-            })) { NagaMenu(probe:probe,capture:probe.capture) }.menuBarExtraStyle(.window)
+        // The persistent AppKit status menu is owned by AppLifecycle.
     }
 }
 struct DailyMenu: View {
@@ -290,7 +307,7 @@ struct DailyMenu: View {
     @Environment(\.openWindow) var openWindow
     var body: some View {
         Text(probe.status)
-        Button("打开窗口") { openWindow(id: "main"); NSApplication.shared.activate(ignoringOtherApps: true) }
+        Button("打开窗口") { openWindow(id: "main"); SettingsWindowPresenter.requestOpen() }
         Button("连接上次遥控器") { probe.resume() }
         Button("暂停自动输入") { probe.capture.enableAutomatic(false) }
         Button("退出") { NSApplication.shared.terminate(nil) }

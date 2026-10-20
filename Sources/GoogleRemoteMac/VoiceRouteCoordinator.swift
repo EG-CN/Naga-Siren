@@ -27,6 +27,11 @@ enum VoiceRouteState: Equatable {
     func stopNewSessions()
     func endOwnedSession() async throws
     func startNewSessions() async throws
+    func finishUI()
+}
+
+extension VoiceRouteDriver {
+    func finishUI() {}
 }
 
 @MainActor final class VoiceRouteCoordinator: ObservableObject {
@@ -65,7 +70,7 @@ enum VoiceRouteState: Equatable {
     func cancelQuit() { quitting = false }
 
     private func reconcile() async {
-        defer { worker = nil }
+        defer { driver.finishUI(); worker = nil }
         while true {
             let id = revision
             let enabled = wantsEnabled
