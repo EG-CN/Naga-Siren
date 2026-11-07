@@ -139,6 +139,10 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
         let root=try await appElement()
         for _ in 0..<10 {
             try checkDeadline()
+            // The helper window may materialize late after a relaunch; minimize
+            // it the moment it exists to keep the on-screen flash as short as
+            // possible. Re-minimizing is idempotent.
+            minimizeSettingsWindows()
             var list=try nodes(root)
             if list.contains(where:{text($0)=="选择麦克风"}) {
                 guard try closePicker(list) else {throw Failure(message:"请关闭豆包的麦克风选择列表后重试")}
@@ -146,10 +150,6 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
             }
             let d=try devices()
             if buttons(list).contains(where:{let s=text($0);return s==d.virtual || s==d.builtIn || s.hasPrefix("自动检测（")}) {
-                if !preparedBackground {
-                    preparedBackground=true
-                    minimizeSettingsWindows()
-                }
                 return list
             }
             let voice=buttons(list).filter{text($0)=="语音输入"}
@@ -188,6 +188,7 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
             // The settings summary may also contain the same name; an AX button
             // inside the picker must be unique unless it is already selected.
             if candidates.count==1 {
+                minimizeSettingsWindows()
                 try press(candidates[0])
                 try await Task.sleep(for:.milliseconds(100))
                 let after=try nodes(root)
@@ -199,6 +200,10 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
         }
         throw Failure(message:"豆包麦克风列表未响应")
     }
+    // Minimized windows remain AX-readable for the automation, but they strand
+    // a thumbnail in the Dock. So the helper stays alive (fast repeated
+    // switches) while voice activity continues, and is terminated once it has
+    // been idle for a while, which clears the Dock thumbnail again.
     private func minimizeSettingsWindows() {
         guard let settings else {return}
         let root=AXUIElementCreateApplication(settings.processIdentifier)
@@ -209,18 +214,34 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
                 if AXUIElementSetAttributeValue(window,kAXMinimizedAttribute as CFString,kCFBooleanTrue) == .success {minimized += 1}
             }
         }
-        DiagnosticLog.record("settings.background",fields:["minimizedWindows":String(minimized)])
+        if !preparedBackground {
+            preparedBackground=true
+            DiagnosticLog.record("settings.background",fields:["minimizedWindows":String(minimized)])
+        }
+    }
+    private var idleTerminateTask:Task<Void,Never>?
+    private func scheduleIdleTermination() {
+        idleTerminateTask?.cancel()
+        idleTerminateTask=Task { [weak self] in
+            try? await Task.sleep(for:.seconds(45))
+            guard !Task.isCancelled else {return}
+            guard let self,!self.ownsSettingsUI else {return}
+            // Never kill a settings window the user is looking at right now.
+            guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier != self.settingsID else {
+                self.scheduleIdleTermination();return
+            }
+            if let settings=self.settings,!settings.isTerminated {
+                self.settings=nil
+                settings.terminate()
+                DiagnosticLog.record("settings.idle.terminate")
+            }
+        }
     }
     func finishUI(){
         transitionDeadline=nil
-        if ownsSettingsUI && !preserveSettingsUI,let settings {
-            // Quitting the helper is the only cleanup that leaves no minimized
-            // window thumbnail in the Dock: hiding or minimizing both keep it
-            // there (verified on-device). The next transaction relaunches it.
-            settings.terminate()
-            var waited=0
-            while !settings.isTerminated,waited<6 {Thread.sleep(forTimeInterval:0.1);waited+=1}
-            DiagnosticLog.record("settings.transaction.finish",fields:["terminated":String(settings.isTerminated),"launched":String(launchedSettings)])
+        if ownsSettingsUI && !preserveSettingsUI {
+            minimizeSettingsWindows()
+            DiagnosticLog.record("settings.transaction.finish",fields:["minimized":"true","launched":String(launchedSettings)])
         }
         preparedBackground=false
         ownsSettingsUI=false
@@ -229,6 +250,7 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
         if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == settingsID,
            let previousApplication,!previousApplication.isTerminated {previousApplication.activate(options:[])}
         previousApplication=nil
+        scheduleIdleTermination()
     }
 }
 

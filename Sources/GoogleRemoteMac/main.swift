@@ -55,6 +55,7 @@ final class RemoteProbe: NSObject, ObservableObject, @preconcurrency CBCentralMa
         Task { @MainActor [weak self] in self?.resume() }
     }
     private func retry(_ message: String) {
+        DiagnosticLog.record("ble.retry",fields:["reason":message])
         resetConnection()
         status = message + "，等待遥控器唤醒后自动重连"
         guard autoReconnect else { return }
@@ -94,6 +95,7 @@ final class RemoteProbe: NSObject, ObservableObject, @preconcurrency CBCentralMa
         guard central.state == .poweredOn else { status = "请开启蓝牙并允许本应用访问蓝牙"; return }
         scanRequested = false; scanning = true; status = "扫描中，请唤醒遥控器；首次使用可先在系统蓝牙中配对"
         let existing = central.retrieveConnectedPeripherals(withServices: [serviceID, CBUUID(string: "1812"), CBUUID(string: "180F")])
+        DiagnosticLog.record("ble.scan",fields:["systemConnected":String(existing.count),"remembered":remembered == nil ? "none":"set"])
         for peripheral in existing {
             let name = (peripheral.name ?? "").lowercased()
             if name.contains("chromecast") || name.contains("google") {
@@ -101,6 +103,13 @@ final class RemoteProbe: NSObject, ObservableObject, @preconcurrency CBCentralMa
             }
         }
         log("从系统已连接设备中找到 \(devices.count) 个谷歌遥控器候选")
+        // A remembered identifier can go stale (e.g. after re-pairing) and stall
+        // connect() forever while the live remote sits unconnected, so a live
+        // system-connected candidate always wins over the remembered identifier.
+        if let live = devices.first {
+            self.remembered = nil
+            connect(live); return
+        }
         if let remembered {
             let known = central.retrievePeripherals(withIdentifiers: [remembered])
             if let peripheral = known.first {
@@ -117,6 +126,7 @@ final class RemoteProbe: NSObject, ObservableObject, @preconcurrency CBCentralMa
         }
     }
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        DiagnosticLog.record("ble.state",fields:["state":String(central.state.rawValue)])
         if central.state == .poweredOn { if scanRequested { beginScan() } }
         else {
             resetConnection(); scanRequested = autoReconnect
@@ -126,6 +136,7 @@ final class RemoteProbe: NSObject, ObservableObject, @preconcurrency CBCentralMa
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
         let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? ""
         guard name.lowercased().contains("chromecast") || name.lowercased().contains("google") else { return }
+        DiagnosticLog.record("ble.discovered",fields:["name":name])
         if !devices.contains(where: { $0.identifier == peripheral.identifier }) { devices.append(peripheral); log("发现谷歌遥控器候选") }
         if peripheral.identifier == remembered { remembered = nil; connect(peripheral) }
     }
@@ -133,21 +144,34 @@ final class RemoteProbe: NSObject, ObservableObject, @preconcurrency CBCentralMa
         autoReconnect = true; retryTimer?.invalidate(); resetConnection(); selected = peripheral; peripheral.delegate = self; packets = 0; bytes = 0
         status = "正在连接 \(peripheral.name ?? "遥控器")"; log("用户已选择设备，开始连接"); central.connect(peripheral)
         timeout = Timer.scheduledTimer(withTimeInterval: 12, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { guard let self, !self.connected else { return }; self.retry("连接暂未完成") }
+            MainActor.assumeIsolated { guard let self, !self.connected else { return }
+                // Evict a remembered identifier that no longer matches any live
+                // system-connected remote, so the next cycle connects the real one.
+                if let remembered = self.remembered {
+                    let live = self.central.retrieveConnectedPeripherals(withServices: [self.serviceID, CBUUID(string: "1812"), CBUUID(string: "180F")])
+                    if !live.isEmpty, !live.contains(where: { $0.identifier == remembered }) {
+                        UserDefaults.standard.removeObject(forKey: "remoteID")
+                    }
+                }
+                self.retry("连接暂未完成") }
         }
     }
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         guard peripheral === selected else { central.cancelPeripheralConnection(peripheral); return }
         UserDefaults.standard.set(peripheral.identifier.uuidString, forKey: "remoteID"); retryDelay = 3; timeout?.invalidate(); log("应用蓝牙连接成功"); connected = true; status = "已连接，正在发现语音服务"; peripheral.discoverServices(nil)
+        DiagnosticLog.record("ble.connected")
     }
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        DiagnosticLog.record("ble.connect.fail",fields:["code":String((error as NSError?)?.code ?? 0)])
         guard peripheral === selected else { return }; retry("连接失败")
     }
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        DiagnosticLog.record("ble.disconnect",fields:["code":String((error as NSError?)?.code ?? 0)])
         guard peripheral === selected else { return }; retry("遥控器已断开")
     }
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard peripheral === selected else { return }
+        DiagnosticLog.record("ble.services",fields:["error":String(error == nil),"uuids":(peripheral.services ?? []).map{String($0.uuid.uuidString.prefix(8))}.joined(separator:",")])
         guard error == nil else { retry("服务发现失败"); return }
         for service in peripheral.services ?? [] {
             log("发现服务：\(service.uuid.uuidString)")
@@ -158,6 +182,7 @@ final class RemoteProbe: NSObject, ObservableObject, @preconcurrency CBCentralMa
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard peripheral === selected else { return }
         guard error == nil else { log("特征发现失败：\(service.uuid)"); return }
+        DiagnosticLog.record("ble.characteristics",fields:["service":String(service.uuid.uuidString.prefix(8)),"count":String(service.characteristics?.count ?? 0)])
         for c in service.characteristics ?? [] {
             log("发现特征：\(c.uuid.uuidString)")
             if c.uuid == txID { tx = c }
@@ -171,7 +196,7 @@ final class RemoteProbe: NSObject, ObservableObject, @preconcurrency CBCentralMa
     }
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
         guard peripheral === selected else { return }
-        if error != nil { log("订阅失败：\(characteristic.uuid)"); return }
+        if error != nil { log("订阅失败：\(characteristic.uuid)"); DiagnosticLog.record("ble.subscribe.fail",fields:["uuid":String(characteristic.uuid.uuidString.prefix(8))]); return }
         if characteristic.isNotifying { subscriptions.insert(characteristic.uuid.uuidString); log("已订阅：\(characteristic.uuid)") }
         negotiateIfReady()
     }
@@ -180,6 +205,7 @@ final class RemoteProbe: NSObject, ObservableObject, @preconcurrency CBCentralMa
               subscriptions.contains(audioID.uuidString), subscriptions.contains(controlID.uuidString) else { return }
         guard tx.properties.contains(.write) || tx.properties.contains(.writeWithoutResponse) else { status = "语音控制特征不可写"; return }
         negotiating = true; status = "正在协商语音能力"
+        DiagnosticLog.record("ble.caps.request")
         selected.writeValue(Data([0x0a,1,0,0,2,3]), for: tx, type: tx.properties.contains(.write) ? .withResponse : .withoutResponse)
         capsTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { guard let self, !self.voiceReady else { return }; self.retry("语音能力协商超时") }
@@ -195,6 +221,7 @@ final class RemoteProbe: NSObject, ObservableObject, @preconcurrency CBCentralMa
         if c.uuid == controlID {
             let p = Array(data)
             if p.first == 0x0b {
+                DiagnosticLog.record("ble.caps.response",fields:["hex":data.map { String(format: "%02X", $0) }.joined(separator:"")])
                 voiceReady = p.count == 9 && p[1] == 1 && p[2] == 0 && p[3] & 2 != 0 && p[4] == 3 && (1...512).contains(Int(p[5]) * 256 + Int(p[6]))
                 if voiceReady { capture.frameSize = Int(p[5]) * 256 + Int(p[6]) }
                 capsTimer?.invalidate(); status = voiceReady ? "语音能力已确认，请按住 Assistant 键说话并观察音频包数" : "收到能力响应，但格式暂不支持"
