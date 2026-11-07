@@ -55,6 +55,9 @@ struct TransparentWindowContent:ViewModifier {
     private static var requested = false
     private static var userOpened = false
     static func register(_ settingsWindow:NSWindow) {
+        // A minimized settings window would strand its thumbnail in the Dock
+        // with no app icon to restore from, so the window cannot miniaturize.
+        settingsWindow.styleMask.remove(.miniaturizable)
         window=settingsWindow
         if requested { present() }
         else if !userOpened { DispatchQueue.main.async { if !userOpened { settingsWindow.orderOut(nil) } } }

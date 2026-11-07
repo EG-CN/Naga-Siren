@@ -213,10 +213,14 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
     }
     func finishUI(){
         transitionDeadline=nil
-        if ownsSettingsUI && !preserveSettingsUI {
-            let hidden=settings?.hide() ?? false
-            if !hidden {minimizeSettingsWindows()}
-            DiagnosticLog.record("settings.transaction.finish",fields:["hidden":String(hidden),"launched":String(launchedSettings)])
+        if ownsSettingsUI && !preserveSettingsUI,let settings {
+            // Quitting the helper is the only cleanup that leaves no minimized
+            // window thumbnail in the Dock: hiding or minimizing both keep it
+            // there (verified on-device). The next transaction relaunches it.
+            settings.terminate()
+            var waited=0
+            while !settings.isTerminated,waited<6 {Thread.sleep(forTimeInterval:0.1);waited+=1}
+            DiagnosticLog.record("settings.transaction.finish",fields:["terminated":String(settings.isTerminated),"launched":String(launchedSettings)])
         }
         preparedBackground=false
         ownsSettingsUI=false

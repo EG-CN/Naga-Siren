@@ -27,7 +27,7 @@ final class RemoteProbe: NSObject, ObservableObject, @preconcurrency CBCentralMa
         AppLifecycle.probe = self
         SettingsWindowPresenter.createWindow = { [weak self] in
             guard let self else { return nil }
-            let window = NSWindow(contentRect:NSRect(x:0,y:0,width:1180,height:800),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
+            let window = NSWindow(contentRect:NSRect(x:0,y:0,width:1180,height:800),styleMask:[.titled,.closable,.resizable],backing:.buffered,defer:false)
             window.title="小娜迦"
             window.isReleasedWhenClosed=false
             window.contentView=NSHostingView(rootView:NagaSettingsView(probe:self,capture:self.capture))
