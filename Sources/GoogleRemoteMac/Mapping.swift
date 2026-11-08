@@ -35,6 +35,8 @@ final class MappingStore: ObservableObject {
         if let id=UserDefaults.standard.string(forKey:"naga.activeScheme").flatMap(UUID.init(uuidString:)),schemes.contains(where:{$0.id==id}){selected=id}else{selected=schemes[0].id}
     }
     var current:Int { schemes.firstIndex(where:{$0.id==selected}) ?? 0 }
+    // 语音键走 ATVV 语音通道、不发 HID 报告，检测时由语音链路代为点亮。
+    func noteVoiceKey(){guard detecting else{return};lastButton="语音键";lastUsage="语音键 · 已触发语音通道（不参与按键映射）"}
     func save(){if let data=try? JSONEncoder().encode(schemes){UserDefaults.standard.set(data,forKey:"naga.schemes")};UserDefaults.standard.set(selected.uuidString,forKey:"naga.activeScheme")}
     func resetDefaults(){schemes[current].buttons=Self.defaultButtons();save();status="已恢复内置默认方案"}
     static func defaultButtons()->[ButtonMapping] {

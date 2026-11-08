@@ -49,7 +49,7 @@ struct RemoteButtonPage:View {
     private var remotePanel:some View {
         VStack(spacing:10) {
             HStack{Text("选择按键").font(.caption.weight(.medium)).foregroundStyle(.secondary);Spacer();
-                if store.detecting {Label("检测中",systemImage:"dot.radiowaves.left.and.right").font(.caption).foregroundStyle(.teal)}
+                if store.detecting {Label("检测中",systemImage:"dot.radiowaves.left.and.right").font(.caption).foregroundStyle(QuietWater.accent)}
             }.padding(.horizontal,18).padding(.top,18)
             GeometryReader { geometry in
                 let scale=max(0,min(1,min((geometry.size.height-4)/540,(geometry.size.width-12)/200)))
@@ -72,7 +72,7 @@ struct RemoteButtonPage:View {
                     }
                     Spacer()
                     Image(systemName:selected=="语音" ? "mic":"cursorarrow.click")
-                        .font(.title2.weight(.light)).foregroundStyle(.teal).padding(12)
+                        .font(.title2.weight(.light)).foregroundStyle(QuietWater.accent).padding(12)
                 }
                 if selected=="语音" {voiceEditor}
                 else {
@@ -86,7 +86,7 @@ struct RemoteButtonPage:View {
                     Label("字母快捷键会经过当前输入法；测试单个字母请切到英文。",systemImage:"info.circle")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
                 }
-                HStack(spacing:6){Image(systemName:"checkmark.circle.fill").foregroundStyle(.teal);Text(saved ? "已保存到“\(store.schemes[store.current].name)”":"当前方案：\(store.schemes[store.current].name)").foregroundStyle(.secondary)}.font(.caption)
+                HStack(spacing:6){Image(systemName:"checkmark.circle.fill").foregroundStyle(QuietWater.accent);Text(saved ? "已保存到“\(store.schemes[store.current].name)”":"当前方案：\(store.schemes[store.current].name)").foregroundStyle(.secondary)}.font(.caption)
             }.padding(22)
         }.modifier(RemoteGlassSurface(radius:24))
     }
@@ -168,7 +168,7 @@ struct RemoteButtonPage:View {
                 Spacer(minLength:4)
                 Button("恢复默认"){confirmDefaults=true}.disabled(store.enabled || store.detecting || detectionTransition)
             }
-            HStack(spacing:6){Circle().fill(store.detecting ? Color.teal:store.enabled ? Color.green:Color.secondary.opacity(0.4)).frame(width:6,height:6)
+            HStack(spacing:6){Circle().fill(store.detecting ? QuietWater.accent:store.enabled ? QuietWater.seafoam:Color.secondary.opacity(0.4)).frame(width:6,height:6)
                 Text(detectionTransition ? "正在准备安全检测…":store.status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 if detectionTransition {ProgressView().controlSize(.mini)}
@@ -249,9 +249,9 @@ struct GoogleRemoteLineArt:View {
             Image(systemName:symbol)
                 .font(.system(size:name=="语音" ? 16:13,weight:.medium))
                 .frame(width:size,height:size)
-                .foregroundStyle(selected==name ? Color.teal:Color.primary.opacity(0.65))
-                .background(selected==name ? Color.teal.opacity(0.13):Color.clear,in:Circle())
-                .overlay(Circle().stroke(selected==name ? Color.teal:Color.primary.opacity(0.25),lineWidth:selected==name ? 2:1))
+                .foregroundStyle(selected==name ? QuietWater.accent:Color.primary.opacity(0.65))
+                .background(selected==name ? QuietWater.accent.opacity(0.13):Color.clear,in:Circle())
+                .overlay(Circle().stroke(selected==name ? QuietWater.accent:Color.primary.opacity(0.25),lineWidth:selected==name ? 2:1))
                 .frame(width:hitSize,height:hitSize)
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel("遥控器线稿·\(name)")

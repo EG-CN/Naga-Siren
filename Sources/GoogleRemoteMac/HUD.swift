@@ -41,7 +41,7 @@ struct HUDContent:View{
     @ObservedObject var capture:AudioCapture
     @ObservedObject var computer:ComputerVoice
     var body:some View{
-        HStack(spacing:14){Image(systemName:"water.waves").font(.title2).foregroundStyle(.teal);VStack(alignment:.leading,spacing:6){Text(computer.active ? "电脑麦克风":capture.recognizing ? "识别中":"遥控器").font(.callout.weight(.semibold));ProgressView(value:Double(computer.active ? computer.level:capture.level)).tint(.teal)};Text("小娜迦").font(.caption).foregroundStyle(.secondary)}.padding(18).frame(width:330,height:76).background(.ultraThinMaterial,in:Capsule()).overlay(Capsule().stroke(.white.opacity(0.25),lineWidth:1))
+        HStack(spacing:14){Image(systemName:"water.waves").font(.title2).foregroundStyle(QuietWater.accent);VStack(alignment:.leading,spacing:6){Text(computer.active ? "电脑麦克风":capture.recognizing ? "识别中":"遥控器").font(.callout.weight(.semibold));ProgressView(value:Double(computer.active ? computer.level:capture.level)).tint(QuietWater.accent)};Text("小娜迦").font(.caption).foregroundStyle(.secondary)}.padding(18).frame(width:330,height:76).background(.ultraThinMaterial,in:Capsule()).overlay(Capsule().stroke(.white.opacity(0.25),lineWidth:1))
     }
 }
 

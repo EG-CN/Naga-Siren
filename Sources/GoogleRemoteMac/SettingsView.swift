@@ -20,10 +20,10 @@ struct NagaSettingsView:View{
     var body:some View{
         NavigationSplitView{
             VStack(alignment:.leading,spacing:22){
-                HStack(spacing:12){Image(systemName:"water.waves").font(.title).foregroundStyle(.teal);VStack(alignment:.leading){Text("小娜迦").font(.title3.bold());Text("Naga Siren").font(.caption).foregroundStyle(.secondary)}}.padding(.horizontal,16).padding(.top,22)
+                HStack(spacing:12){Image(systemName:"water.waves").font(.title).foregroundStyle(QuietWater.accent);VStack(alignment:.leading){Text("小娜迦").font(.title3.bold());Text("Naga Siren").font(.caption).foregroundStyle(.secondary)}}.padding(.horizontal,16).padding(.top,22)
                 List(pages,id:\.0,selection:$page){item in Label(item.0,systemImage:item.1).tag(item.0)}.listStyle(.sidebar).scrollContentBackground(.hidden)
-                Label("本机 · Chromecast",systemImage:"laptopcomputer").font(.caption).foregroundStyle(.secondary).padding(16)
-            }.navigationSplitViewColumnWidth(min:185,ideal:210,max:240)
+                Label("本机 · Chromecast",systemImage:"laptopcomputer").font(.caption).foregroundStyle(QuietWater.textMuted).padding(16)
+                }.background(QuietWater.sidebar).navigationSplitViewColumnWidth(min:185,ideal:210,max:240)
         }detail:{
             Group {
                 if page=="遥控器按键" {
@@ -37,7 +37,7 @@ struct NagaSettingsView:View{
                 }
             }.frame(maxWidth:.infinity,maxHeight:.infinity)
 
-        }.tint(.teal).frame(minWidth:1120,minHeight:740)
+        }.tint(QuietWater.accent).frame(minWidth:1120,minHeight:740)
         .background {WindowGlass().ignoresSafeArea()}
         .modifier(TransparentWindowContent())
         .toolbarBackground(.hidden,for:.windowToolbar)
@@ -49,7 +49,7 @@ struct NagaSettingsView:View{
     private var pageHeader:some View {
         HStack{
             VStack(alignment:.leading,spacing:5){Text(page).font(.largeTitle.bold());Text(subtitle).font(.callout).foregroundStyle(.secondary)}
-            Spacer();Circle().fill(probe.voiceReady ? Color.teal:Color.orange).frame(width:8,height:8)
+            Spacer();Circle().fill(probe.voiceReady ? QuietWater.seafoam:QuietWater.coral).frame(width:8,height:8)
             Text(probe.voiceReady ? "遥控器已连接":"等待遥控器").font(.caption)
         }
     }
@@ -69,10 +69,10 @@ struct NagaSettingsView:View{
     private var overview:some View{
         VStack(spacing:20){
             GlassCard(title:"语音控制"){
-                HStack{Image(systemName:capture.armed || capture.computer.active ? "waveform.circle.fill":"mic.circle").font(.system(size:48)).foregroundStyle(.teal);VStack(alignment:.leading,spacing:6){Text(capture.computer.active ? "电脑麦克风":capture.sourceName).font(.title2.weight(.semibold));Text(capture.status).font(.callout).foregroundStyle(.secondary)};Spacer()}
+                HStack{Image(systemName:capture.armed || capture.computer.active ? "waveform.circle.fill":"mic.circle").font(.system(size:48)).foregroundStyle(QuietWater.accent);VStack(alignment:.leading,spacing:6){Text(capture.computer.active ? "电脑麦克风":capture.sourceName).font(.title2.weight(.semibold));Text(capture.status).font(.callout).foregroundStyle(.secondary)};Spacer()}
                 Toggle("启用自动语音输入",isOn:Binding(get:{capture.routeControl.wantsEnabled},set:{capture.enableAutomatic($0)})).disabled(capture.routeChanging)
                 HStack{if capture.routeChanging{ProgressView().controlSize(.small)};Text(capture.routeStatus).font(.caption).foregroundStyle(.secondary)}
-                HStack{Button(capture.routeControl.wantsEnabled ? "暂停语音":"恢复语音"){capture.enableAutomatic(!capture.routeControl.wantsEnabled)}.disabled(capture.routeChanging);Button("紧急停止",role:.destructive){capture.emergencyStop()};Spacer();Button("检查设置"){page="检查与诊断"}}
+                HStack{Button(capture.routeControl.wantsEnabled ? "暂停语音":"恢复语音"){capture.enableAutomatic(!capture.routeControl.wantsEnabled)}.disabled(capture.routeChanging);Button("紧急停止"){capture.emergencyStop()}.buttonStyle(WaterDestructiveButtonStyle());Spacer();Button("检查设置"){page="检查与诊断"}}
             }
             GlassCard(title:"日常启动"){
                 Toggle("登录后自动启动",isOn:Binding(get:{startup.enabled},set:{startup.setEnabled($0)}))
@@ -124,7 +124,7 @@ struct NagaSettingsView:View{
     private var words:some View{
         GlassCard(title:"常用词"){
             Text("每行一个词。用于 Apple 本机备用识别；豆包的词库仍在豆包内管理，不会偷偷修改其私有数据。").font(.callout).foregroundStyle(.secondary)
-            TextEditor(text:$prefs.commonWords).font(.body).frame(height:250).scrollContentBackground(.hidden).padding(10).clipShape(RoundedRectangle(cornerRadius:12))
+            TextEditor(text:$prefs.commonWords).font(.body).frame(height:250).scrollContentBackground(.hidden).background(QuietWater.field).padding(10).clipShape(RoundedRectangle(cornerRadius:12)).overlay(RoundedRectangle(cornerRadius:12).stroke(QuietWater.hairline,lineWidth:1))
             HStack{Button("导入词表"){let panel=NSOpenPanel();if panel.runModal() == .OK,let url=panel.url,let text=try? String(contentsOf:url,encoding:.utf8),text.utf8.count<100000{prefs.commonWords=text}};Button("导出词表"){let panel=NSSavePanel();panel.nameFieldStringValue="小娜迦-常用词.txt";if panel.runModal() == .OK,let url=panel.url{try? prefs.commonWords.write(to:url,atomically:true,encoding:.utf8)}};Spacer();Button("清空最近识别"){capture.transcript=""}}
             if !capture.transcript.isEmpty{Text("最近一次 Apple 识别（仅内存）").font(.caption);Text(capture.transcript).textSelection(.enabled)}
         }
@@ -144,6 +144,7 @@ struct NagaSettingsView:View{
                     Button("重新检查"){refresh()}
                     Spacer()
                     Button("完成首次设置") {UserDefaults.standard.set(true,forKey:"naga.setupCompleted");page="概览"}
+                        .buttonStyle(WaterPrimaryButtonStyle())
                         .disabled(!AXIsProcessTrusted() || AVCaptureDevice.authorizationStatus(for:.audio) != .authorized || !CGPreflightListenEventAccess() || (try? DoubaoBridge.device()) == nil)
                 }
                 Text("小娜迦会自动管理豆包麦克风，平时保持内置麦克风。Apple 备用识别权限可稍后开启。").font(.caption).foregroundStyle(.secondary)
@@ -156,7 +157,7 @@ struct NagaSettingsView:View{
         }
     }
     private func checkRow(_ title:String,ok:Bool,hint:String,action:@escaping()->Void)->some View{
-        HStack{Image(systemName:ok ? "checkmark.circle.fill":"exclamationmark.circle").foregroundStyle(ok ? Color.teal:Color.orange);VStack(alignment:.leading){Text(title);Text(hint).font(.caption).foregroundStyle(.secondary)};Spacer();if !ok{Button("处理",action:action)}}.padding(.vertical,5)
+        HStack{Image(systemName:ok ? "checkmark.circle.fill":"exclamationmark.circle").foregroundStyle(ok ? QuietWater.seafoam:QuietWater.coral);VStack(alignment:.leading){Text(title);Text(hint).font(.caption).foregroundStyle(.secondary)};Spacer();if !ok{Button("处理",action:action)}}.padding(.vertical,5)
     }
     private var buttons:some View{RemoteButtonPage(store:mappings,capture:capture,receiver:probe.buttons)}
     private var schemes:some View{
@@ -173,7 +174,7 @@ struct NagaSettingsView:View{
 struct MicrophoneMeter:View{
     @ObservedObject var computer:ComputerVoice
     @ObservedObject var capture:AudioCapture
-    var body:some View{HStack{Image(systemName:"waveform").foregroundStyle(.teal);ProgressView(value:Double(computer.active ? computer.level:capture.level)).tint(.teal);Text(computer.active ? "电脑":"遥控器").font(.caption).foregroundStyle(.secondary)}}
+    var body:some View{HStack{Image(systemName:"waveform").foregroundStyle(QuietWater.accent);ProgressView(value:Double(computer.active ? computer.level:capture.level)).tint(QuietWater.accent);Text(computer.active ? "电脑":"遥控器").font(.caption).foregroundStyle(.secondary)}}
 }
 struct NagaMenu:View{
     @ObservedObject var probe:RemoteProbe
@@ -181,7 +182,7 @@ struct NagaMenu:View{
     @Environment(\.openWindow) private var openWindow
     var body:some View{
         VStack(alignment:.leading,spacing:16){
-            HStack{Image(systemName:"water.waves").font(.title2).foregroundStyle(.teal);VStack(alignment:.leading){Text("小娜迦").font(.headline);Text(probe.voiceReady ? "遥控器已就绪":"电脑语音可独立使用").font(.caption).foregroundStyle(.secondary)};Spacer();Circle().fill(capture.automatic ? Color.teal:Color.orange).frame(width:8,height:8)}
+            HStack{Image(systemName:"water.waves").font(.title2).foregroundStyle(QuietWater.accent);VStack(alignment:.leading){Text("小娜迦").font(.headline);Text(probe.voiceReady ? "遥控器已就绪":"电脑语音可独立使用").font(.caption).foregroundStyle(.secondary)};Spacer();Circle().fill(capture.automatic ? QuietWater.accent:QuietWater.coral).frame(width:8,height:8)}
             Text(capture.status).font(.callout).fixedSize(horizontal:false,vertical:true)
             HStack{if capture.routeChanging{ProgressView().controlSize(.small)};Text(capture.routeStatus).font(.caption).foregroundStyle(.secondary)}
             MicrophoneMeter(computer:capture.computer,capture:capture)

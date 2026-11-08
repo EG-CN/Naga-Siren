@@ -25,10 +25,10 @@ struct GlassCard<Content:View>:View{
     let title:String
     @ViewBuilder var content:Content
     var body:some View{
-        VStack(alignment:.leading,spacing:14){if !title.isEmpty{Text(title).font(.headline)};content}
+        VStack(alignment:.leading,spacing:14){if !title.isEmpty{Text(title).font(.headline).foregroundColor(QuietWater.text)};content}
             .frame(maxWidth:.infinity,alignment:.leading).padding(20)
-            .clipShape(RoundedRectangle(cornerRadius:20))
-            .overlay(RoundedRectangle(cornerRadius:20).stroke(.white.opacity(0.18),lineWidth:1))
+            .background(RoundedRectangle(cornerRadius:12).fill(QuietWater.card))
+            .overlay(RoundedRectangle(cornerRadius:12).stroke(QuietWater.hairline,lineWidth:1))
     }
 }
 struct ShortcutRecorder:NSViewRepresentable{

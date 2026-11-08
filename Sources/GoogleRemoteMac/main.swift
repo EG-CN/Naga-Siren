@@ -41,6 +41,8 @@ final class RemoteProbe: NSObject, ObservableObject, @preconcurrency CBCentralMa
             selected.writeValue(data,for:tx,type:tx.properties.contains(.write) ? .withResponse:.withoutResponse)
         }
         capture.useDoubao = true
+        capture.voiceKeyFeedback={ [weak self] in self?.mappings.noteVoiceKey() }
+        capture.keyDetecting={ [weak self] in self?.mappings.detecting ?? false }
         if AppLifecycle.hasFinishedLaunching {capture.enableAutomatic(true)}
         let notifications=NSWorkspace.shared.notificationCenter
         sleepObservers.append(notifications.addObserver(forName:NSWorkspace.willSleepNotification,object:nil,queue:.main){[weak self]_ in
@@ -282,6 +284,8 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
         Self.installMenu()
         NSApplication.shared.setActivationPolicy(.accessory)
         NSApplication.shared.hide(nil)
+        // 「浅水」主题为深色专属：强制暗色外观，避免系统浅色模式下深底配深字。
+        NSApp.appearance=NSAppearance(named:.darkAqua)
         Logger(subsystem:"local.googleremote.macprobe",category:"app-startup").notice("应用启动完成，开始协调语音路由")
         Self.capture?.enableAutomatic(true)
     }

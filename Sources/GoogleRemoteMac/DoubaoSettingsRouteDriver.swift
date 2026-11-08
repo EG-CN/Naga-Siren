@@ -16,7 +16,7 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
     private var preserveSettingsUI = false
     private var transitionDeadline:ContinuousClock.Instant?
     private func checkDeadline() throws {if let transitionDeadline,ContinuousClock.now>=transitionDeadline {throw Failure(message:"豆包设置切换超时，已停止接管")}}
-    init(capture:AudioCapture) { self.capture=capture }
+    init(capture:AudioCapture) { self.capture=capture;Self.startIdleWatchdog() }
     struct Failure:LocalizedError {
         let message:String
         var errorDescription:String? { message }
@@ -44,10 +44,26 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
         transitionDeadline=ContinuousClock.now.advanced(by:.seconds(10))
         previousApplication=NSWorkspace.shared.frontmostApplication
         defer { finishUI() }
-        if try await selectedRoute() != route { try await selectRoute(route) }
+        // 预读与切换入口共用一次遍历，减少 AX 全树扫描次数。
+        let list=try await mainNodes()
+        if try routeIn(list) != route { try await selectRoute(route,known:list) }
         guard try await selectedRoute() == route else {
             throw Failure(message:"豆包麦克风选择未确认")
         }
+    }
+    private func routeIn(_ list:[AXUIElement]) throws -> VoiceInputRoute {
+        let d=try devices()
+        let matches=buttons(list).filter{let s=text($0);return s==d.virtual || s==d.builtIn || s.hasPrefix("自动检测（")}
+        guard matches.count==1 else{throw Failure(message:"豆包麦克风控件不唯一，未执行切换")}
+        let selected=text(matches[0])
+        logger.notice("读回豆包麦克风：\(selected,privacy:.public)")
+        if selected==d.virtual{DiagnosticLog.record("route.readback",fields:["route":"virtual"]);return .virtual}
+        if selected==d.builtIn {DiagnosticLog.record("route.readback",fields:["route":"builtin"]);return .builtIn}
+        if selected.hasPrefix("自动检测（") {return .systemDefault}
+        throw Failure(message:"豆包当前选择了其他设备：\(selected)")
+    }
+    func selectedRoute() async throws -> VoiceInputRoute {
+        try routeIn(try await mainNodes())
     }
 
     private func devices() throws -> (virtual:String,builtIn:String) {
@@ -63,6 +79,8 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
         guard AXIsProcessTrusted() else { throw Failure(message:"自动切换豆包麦克风需要小娜迦的辅助功能权限") }
         if !ownsSettingsUI {
             ownsSettingsUI = true
+            Self.activeTransactions += 1
+            Self.lastRouteActivity = ContinuousClock.now
             let front = NSWorkspace.shared.frontmostApplication
             preserveSettingsUI = false
             if previousApplication == nil { previousApplication = front }
@@ -109,13 +127,18 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
         return ""
     }
     private func nodes(_ root:AXUIElement) throws -> [AXUIElement] {
-        var pending:[(AXUIElement,Int)]=[(root,0)],result=[AXUIElement]()
+        try checkDeadline()
+        // 直接从主窗口子树开始：应用根节点还会带出整个菜单栏，纯属浪费。
+        var pending:[(AXUIElement,Int)]
+        if let windows=value(root,kAXWindowsAttribute) as? [AXUIElement],let first=windows.first {pending=[(first,0)]}
+        else {pending=[(root,0)]}
+        var result=[AXUIElement]()
         let deadline=ContinuousClock.now.advanced(by:.seconds(4))
         while let (node,depth)=pending.popLast() {
             try checkDeadline()
-            guard result.count<450,ContinuousClock.now<deadline else{throw Failure(message:"豆包设置界面读取超时或结构过大")}
+            guard result.count<300,ContinuousClock.now<deadline else{throw Failure(message:"豆包设置界面读取超时或结构过大")}
             result.append(node)
-            if depth<16,let children=value(node,kAXChildrenAttribute) as? [AXUIElement] {
+            if depth<12,let children=value(node,kAXChildrenAttribute) as? [AXUIElement] {
                 pending.append(contentsOf:children.map{($0,depth+1)})
             }
         }
@@ -158,22 +181,14 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
         }
         throw Failure(message:"未找到豆包麦克风选择控件，设置界面可能已变化")
     }
-    func selectedRoute() async throws -> VoiceInputRoute {
-        let d=try devices(),list=try await mainNodes()
-        let matches=buttons(list).filter{let s=text($0);return s==d.virtual || s==d.builtIn || s.hasPrefix("自动检测（")}
-        guard matches.count==1 else {throw Failure(message:"豆包麦克风控件不唯一，未执行切换")}
-        let selected=text(matches[0])
-        logger.notice("读回豆包麦克风：\(selected,privacy:.public)")
-        if selected==d.virtual{DiagnosticLog.record("route.readback",fields:["route":"virtual"]);return .virtual}
-        if selected==d.builtIn {DiagnosticLog.record("route.readback",fields:["route":"builtin"]);return .builtIn}
-        if selected.hasPrefix("自动检测（") {return .systemDefault}
-        throw Failure(message:"豆包当前选择了其他设备：\(selected)")
-    }
-    func selectRoute(_ route:VoiceInputRoute) async throws {
+    func selectRoute(_ route:VoiceInputRoute) async throws { try await selectRoute(route,known:nil) }
+    func selectRoute(_ route:VoiceInputRoute,known:[AXUIElement]?=nil) async throws {
         if route == .virtual,AudioCatalog.devices(input:true).filter({$0.name == "MiRemoteV 2ch"}).count != 1 {
             throw Failure(message:"未能唯一找到 MiRemoteV 2ch，保留电脑麦克风")
         }
-        let d=try devices(),list=try await mainNodes()
+        let d=try devices()
+        let list:[AXUIElement]
+        if let known {list=known}else{list=try await mainNodes()}
         let selector=buttons(list).filter{let s=text($0);return s==d.virtual || s==d.builtIn || s.hasPrefix("自动检测（")}
         guard selector.count==1 else{throw Failure(message:"豆包麦克风控件不唯一")}
         try press(selector[0])
@@ -219,21 +234,30 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
             DiagnosticLog.record("settings.background",fields:["minimizedWindows":String(minimized)])
         }
     }
-    private var idleTerminateTask:Task<Void,Never>?
-    private func scheduleIdleTermination() {
-        idleTerminateTask?.cancel()
-        idleTerminateTask=Task { [weak self] in
-            try? await Task.sleep(for:.seconds(45))
-            guard !Task.isCancelled else {return}
-            guard let self,!self.ownsSettingsUI else {return}
-            // Never kill a settings window the user is looking at right now.
-            guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier != self.settingsID else {
-                self.scheduleIdleTermination();return
-            }
-            if let settings=self.settings,!settings.isTerminated {
-                self.settings=nil
+    // 常驻看门狗：按包名现查现杀（不依赖缓存引用），防止缩略图常驻。
+    // 豆包自家可能随时拉起设置助手，所以用周期巡检而不是一次性定时。
+    // 关键：生命周期与遥控会话各有一个驱动实例，看门狗和活动时钟必须全实例共享，
+    // 否则一个实例的旧时钟会把另一个实例刚用完的豆包设置杀掉。
+    private static var watchdogTask:Task<Void,Never>?
+    private static var lastRouteActivity=ContinuousClock.now
+    private static var activeTransactions=0
+    private static func startIdleWatchdog(){
+        guard watchdogTask==nil else {return}
+        watchdogTask=Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for:.seconds(30))
+                guard activeTransactions==0 else {continue}
+                guard ContinuousClock.now >= lastRouteActivity.advanced(by:.seconds(90)) else {continue}
+                // 用户正盯着设置窗口时不杀。
+                let bundleID = "com.bytedance.inputmethod.doubaoime.settings"
+                guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier != bundleID else {continue}
+                guard let settings=NSRunningApplication.runningApplications(withBundleIdentifier:bundleID).first else {continue}
                 settings.terminate()
-                DiagnosticLog.record("settings.idle.terminate")
+                try? await Task.sleep(for:.seconds(1))
+                if !settings.isTerminated {settings.terminate()}
+                try? await Task.sleep(for:.seconds(1))
+                if !settings.isTerminated {kill(settings.processIdentifier,SIGTERM)}
+                DiagnosticLog.record("settings.idle.terminate",fields:["pid":String(settings.processIdentifier)])
             }
         }
     }
@@ -250,7 +274,8 @@ final class DoubaoSettingsRouteDriver: VoiceRouteDriver {
         if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == settingsID,
            let previousApplication,!previousApplication.isTerminated {previousApplication.activate(options:[])}
         previousApplication=nil
-        scheduleIdleTermination()
+        Self.activeTransactions = max(0,Self.activeTransactions-1)
+        Self.lastRouteActivity = ContinuousClock.now
     }
 }
 

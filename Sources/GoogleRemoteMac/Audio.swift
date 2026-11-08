@@ -183,6 +183,9 @@ final class AudioCapture: ObservableObject {
     func requestInputPermission() { delivery.requestPermission() }
     func enableAutomatic(_ enabled: Bool) { routeControl.request(enabled:enabled) }
     var sendDeviceCommand:((Data)->Void)?
+    // 检测实体按键时，语音键事件由语音链路代为点亮（语音键不发 HID 报告）。
+    var voiceKeyFeedback:(()->Void)?
+    var keyDetecting:(()->Bool)?
     private var toggleGate=RemoteModeGate()
     private var extendTimer:Timer?
     var frameSize = 160
@@ -215,6 +218,8 @@ final class AudioCapture: ObservableObject {
         }
     }
     func control(_ data: Data) {
+        if data.first == 0x08 {voiceKeyFeedback?()}
+        if keyDetecting?() == true {return} // 检测模式：只显示按键，不执行映射或启动语音
         if automatic,Preferences.shared.recordingMode=="toggle" {
             if data.first == 4,!toggleGate.active,(computer.active || computer.draining || recognizing) {
                 status="当前语音会话未结束，请稍后再按遥控器";return

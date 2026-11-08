@@ -1,40 +1,36 @@
 import SwiftUI
 import AppKit
 
-// Keep the actual compositor-backed effect inside the content hierarchy.
-// Keep content independent; only the background effect changes opacity.
+// 实色窗口底：「浅水」主题要求全程不透明，不再使用系统材质模糊。
+// 结构保持：视图挂上窗口后完成 SettingsWindowPresenter 注册。
 struct WindowGlass:NSViewRepresentable {
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     func makeNSView(context:Context)->GlassView {
         let view=GlassView()
-        view.material = .hudWindow
-        view.blendingMode = .behindWindow
-        view.state = .active
-        view.alphaValue=reduceTransparency ? 1:0.70
         return view
     }
     func updateNSView(_ view:GlassView,context:Context) {
-        view.reduceTransparency=reduceTransparency
-        view.alphaValue=reduceTransparency ? 1:0.70
         view.configureWindow()
-        view.report(reduceTransparency:reduceTransparency)
+        view.report()
     }
-    final class GlassView:NSVisualEffectView {
-        var reduceTransparency=false
+    final class GlassView:NSView {
         private var reported=false
         override func hitTest(_ point:NSPoint)->NSView?{nil}
-        override func viewDidMoveToWindow(){super.viewDidMoveToWindow();configureWindow();report(reduceTransparency:reduceTransparency)}
+        override func viewDidMoveToWindow(){super.viewDidMoveToWindow();configureWindow();report()}
+        override func draw(_ dirtyRect:NSRect){
+            NSColor(calibratedRed:0x0D/255,green:0x15/255,blue:0x26/255,alpha:1).setFill()
+            dirtyRect.fill()
+        }
         func configureWindow(){
             guard let window else{return}
             SettingsWindowPresenter.register(window)
-            window.isOpaque=false
-            window.backgroundColor = .clear
+            window.isOpaque=true
+            window.backgroundColor=NSColor(calibratedRed:0x0D/255,green:0x15/255,blue:0x26/255,alpha:1)
             window.titlebarAppearsTransparent=true
         }
-        func report(reduceTransparency:Bool){
+        func report(){
             guard window != nil,!reported else{return}
             reported=true
-            DiagnosticLog.record("window.glass.ready",fields:["inContentTree":"true","behindWindow":String(blendingMode == .behindWindow),"alpha":String(Double(alphaValue)),"reduceTransparency":String(reduceTransparency)])
+            DiagnosticLog.record("window.background.ready",fields:["solid":"true","opaque":String(window?.isOpaque ?? false)])
         }
     }
 }
